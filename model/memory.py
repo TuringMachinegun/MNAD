@@ -156,28 +156,15 @@ class Memory(nn.Module):
         _, gathering_indices = torch.topk(softmax_score_memory, 1, dim=1)
         _, updating_indices = torch.topk(softmax_score_query, 1, dim=0)
 
-        if train:
-            query_update = self.get_update_query(
-                keys,
-                gathering_indices,
-                updating_indices,
-                softmax_score_query,
-                query_reshape,
-                train,
-            )
-            updated_memory = F.normalize(query_update + keys, dim=1)
-
-        else:
-            query_update = self.get_update_query(
-                keys,
-                gathering_indices,
-                updating_indices,
-                softmax_score_query,
-                query_reshape,
-                train,
-            )
-            updated_memory = F.normalize(query_update + keys, dim=1)
-
+        query_update = self.get_update_query(
+            keys,
+            gathering_indices,
+            updating_indices,
+            softmax_score_query,
+            query_reshape,
+            train,
+        )
+        updated_memory = F.normalize(query_update + keys, dim=1)
         return updated_memory.detach()
 
     def pointwise_gather_loss(self, query_reshape, keys, gathering_indices, train):
