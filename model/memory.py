@@ -87,35 +87,19 @@ class Memory(nn.Module):
 
     def get_update_query(self, mem, max_indices, update_indices, score, query, train):
         m, d = mem.size()
-        if train:
-            query_update = torch.zeros((m, d)).cuda()
-            for i in range(m):
-                idx = torch.nonzero(max_indices.squeeze(1) == i)
-                a, _ = idx.size()
-                if a != 0:
-                    query_update[i] = torch.sum(
-                        ((score[idx, i] / torch.max(score[:, i])) * query[idx].squeeze(1)),
-                        dim=0,
-                    )
-                else:
-                    query_update[i] = 0
+        query_update = torch.zeros((m, d)).cuda()
+        for i in range(m):
+            idx = torch.nonzero(max_indices.squeeze(1) == i)
+            a, _ = idx.size()
+            if a != 0:
+                query_update[i] = torch.sum(
+                    ((score[idx, i] / torch.max(score[:, i])) * query[idx].squeeze(1)),
+                    dim=0,
+                )
+            else:
+                query_update[i] = 0
+        return query_update
 
-            return query_update
-
-        else:
-            query_update = torch.zeros((m, d)).cuda()
-            for i in range(m):
-                idx = torch.nonzero(max_indices.squeeze(1) == i)
-                a, _ = idx.size()
-                if a != 0:
-                    query_update[i] = torch.sum(
-                        ((score[idx, i] / torch.max(score[:, i])) * query[idx].squeeze(1)),
-                        dim=0,
-                    )
-                else:
-                    query_update[i] = 0
-
-            return query_update
 
     def get_score(self, mem, query):
         bs, h, w, d = query.size()
