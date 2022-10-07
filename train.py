@@ -11,21 +11,14 @@ import torch.utils.data as data
 import torchvision.transforms as transforms
 from torch.autograd import Variable
 
-from model.Reconstruction import convAE as rec_convAE
-from model.final_future_prediction_with_memory_spatial_sumonly_weight_ranking_top1 import (
-    convAE as pred_convAE,
-)
+from model.model import ConvAE
 from model.utils import DataLoader
 
 parser = argparse.ArgumentParser(description="MNAD")
 parser.add_argument("--gpus", nargs="+", type=str, help="gpus")
 parser.add_argument("--batch_size", type=int, default=4, help="batch size for training")
-parser.add_argument(
-    "--test_batch_size", type=int, default=1, help="batch size for test"
-)
-parser.add_argument(
-    "--epochs", type=int, default=60, help="number of epochs for training"
-)
+parser.add_argument("--test_batch_size", type=int, default=1, help="batch size for test")
+parser.add_argument("--epochs", type=int, default=60, help="number of epochs for training")
 parser.add_argument(
     "--loss_compact",
     type=float,
@@ -42,22 +35,12 @@ parser.add_argument("--h", type=int, default=256, help="height of input images")
 parser.add_argument("--w", type=int, default=256, help="width of input images")
 parser.add_argument("--c", type=int, default=3, help="channel of input images")
 parser.add_argument("--lr", type=float, default=2e-4, help="initial learning rate")
-parser.add_argument(
-    "--method", type=str, default="pred", help="The target task for anoamly detection"
-)
-parser.add_argument(
-    "--t_length", type=int, default=5, help="length of the frame sequences"
-)
-parser.add_argument(
-    "--fdim", type=int, default=512, help="channel dimension of the features"
-)
-parser.add_argument(
-    "--mdim", type=int, default=512, help="channel dimension of the memory items"
-)
+parser.add_argument("--task", type=str, default="prediction", help="The target task for anoamly detection")
+parser.add_argument("--t_length", type=int, default=5, help="length of the frame sequences")
+parser.add_argument("--fdim", type=int, default=512, help="channel dimension of the features")
+parser.add_argument("--mdim", type=int, default=512, help="channel dimension of the memory items")
 parser.add_argument("--msize", type=int, default=10, help="number of the memory items")
-parser.add_argument(
-    "--num_workers", type=int, default=2, help="number of workers for the train loader"
-)
+parser.add_argument("--num_workers", type=int, default=2, help="number of workers for the train loader")
 parser.add_argument(
     "--num_workers_test",
     type=int,
@@ -70,9 +53,7 @@ parser.add_argument(
     default="ped2",
     help="type of dataset: ped2, avenue, shanghai",
 )
-parser.add_argument(
-    "--dataset_path", type=str, default="./dataset", help="directory of data"
-)
+parser.add_argument("--dataset_path", type=str, default="./dataset", help="directory of data")
 parser.add_argument("--exp_dir", type=str, default="log", help="directory of log")
 
 args = parser.parse_args()
@@ -87,9 +68,7 @@ else:
         gpus = gpus + args.gpus[i] + ","
     os.environ["CUDA_VISIBLE_DEVICES"] = gpus[:-1]
 
-torch.backends.cudnn.enabled = (
-    True  # make sure to use cudnn for computational performance
-)
+torch.backends.cudnn.enabled = True  # make sure to use cudnn for computational performance
 
 train_folder = args.dataset_path + "/" + args.dataset_type + "/training/frames"
 test_folder = args.dataset_path + "/" + args.dataset_type + "/testing/frames"
@@ -139,13 +118,9 @@ test_batch = data.DataLoader(
 
 
 # Model setting
-assert args.method == "pred" or args.method == "recon", "Wrong task name"
-if args.method == "pred":
-    model = pred_convAE(args.c, args.t_length, args.msize, args.fdim, args.mdim)
-else:
-    model = rec_convAE(
-        args.c, memory_size=args.msize, feature_dim=args.fdim, key_dim=args.mdim
-    )
+assert args.task == "prediction" or args.task == "reconstruction", "Wrong task name"
+t_len = args.t_length if args.task == "prediction" else 2
+model = ConvAE(args.c, t_length=t_len, memory_size=args.msize, feature_dim=args.fdim, key_dim=args.mdim, task=args.task)
 params_encoder = list(model.encoder.parameters())
 params_decoder = list(model.decoder.parameters())
 params = params_encoder + params_decoder
@@ -155,7 +130,7 @@ model.cuda()
 
 
 # Report the training process
-log_dir = os.path.join("./exp", args.dataset_type, args.method, args.exp_dir)
+log_dir = os.path.join("./exp", args.dataset_type, args.task, args.exp_dir)
 if not os.path.exists(log_dir):
     os.makedirs(log_dir)
 orig_stdout = sys.stdout
@@ -165,7 +140,6 @@ sys.stdout = f
 loss_func_mse = nn.MSELoss(reduction="none")
 
 # Training
-
 m_items = F.normalize(
     torch.rand((args.msize, args.mdim), dtype=torch.float), dim=1
 ).cuda()  # Initialize the memory items
@@ -179,7 +153,7 @@ for epoch in range(args.epochs):
 
         imgs = Variable(imgs).cuda()
 
-        if args.method == "pred":
+        if args.task == "prediction":
             (
                 outputs,
                 _,
@@ -204,16 +178,12 @@ for epoch in range(args.epochs):
             ) = model.forward(imgs, m_items, True)
 
         optimizer.zero_grad()
-        if args.method == "pred":
+        if args.task == "prediction":
             loss_pixel = torch.mean(loss_func_mse(outputs, imgs[:, 12:]))
         else:
             loss_pixel = torch.mean(loss_func_mse(outputs, imgs))
 
-        loss = (
-            loss_pixel
-            + args.loss_compact * compactness_loss
-            + args.loss_separate * separateness_loss
-        )
+        loss = loss_pixel + args.loss_compact * compactness_loss + args.loss_separate * separateness_loss
         loss.backward(retain_graph=True)
         optimizer.step()
 
@@ -221,7 +191,7 @@ for epoch in range(args.epochs):
 
     print("----------------------------------------")
     print("Epoch:", epoch + 1)
-    if args.method == "pred":
+    if args.task == "prediction":
         print(
             "Loss: Prediction {:.6f}/ Compactness {:.6f}/ Separateness {:.6f}".format(
                 loss_pixel.item(), compactness_loss.item(), separateness_loss.item()

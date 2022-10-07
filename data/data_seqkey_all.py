@@ -97,9 +97,7 @@ class DatasetFolder(data.Dataset):
             # Faster and available in Python 3.5 and above
             classes = [d.name for d in os.scandir(dir) if d.is_dir()]
         else:
-            classes = [
-                d for d in os.listdir(dir) if os.path.isdir(os.path.join(dir, d))
-            ]
+            classes = [d for d in os.listdir(dir) if os.path.isdir(os.path.join(dir, d))]
         classes.sort()
         class_to_idx = {classes[i]: i for i in range(len(classes))}
         return classes, class_to_idx
@@ -147,13 +145,9 @@ class DatasetFolder(data.Dataset):
         fmt_str += "    Number of datapoints: {}\n".format(self.__len__())
         fmt_str += "    Root Location: {}\n".format(self.root)
         tmp = "    Transforms (if any): "
-        fmt_str += "{0}{1}\n".format(
-            tmp, self.transform.__repr__().replace("\n", "\n" + " " * len(tmp))
-        )
+        fmt_str += "{0}{1}\n".format(tmp, self.transform.__repr__().replace("\n", "\n" + " " * len(tmp)))
         tmp = "    Target Transforms (if any): "
-        fmt_str += "{0}{1}".format(
-            tmp, self.target_transform.__repr__().replace("\n", "\n" + " " * len(tmp))
-        )
+        fmt_str += "{0}{1}".format(tmp, self.target_transform.__repr__().replace("\n", "\n" + " " * len(tmp)))
         return fmt_str
 
 
@@ -179,7 +173,5 @@ class ImageFolder(DatasetFolder):
         loader=default_loader,
         length=5,
     ):
-        super(ImageFolder, self).__init__(
-            root, loader, transform=transform, target_transform=target_transform
-        )
+        super(ImageFolder, self).__init__(root, loader, transform=transform, target_transform=target_transform)
         self.imgs = self.samples
