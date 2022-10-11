@@ -1,5 +1,5 @@
 import numpy as np
-from collections import OrderedDict
+from collections import defaultdict
 import os
 import glob
 import cv2
@@ -38,7 +38,7 @@ class DataLoader(data.Dataset):
     ):
         self.dir = video_folder
         self.transform = transform
-        self.videos = OrderedDict()
+        self.videos = defaultdict(dict)
         self._resize_height = resize_height
         self._resize_width = resize_width
         self._time_step = time_step
@@ -50,10 +50,9 @@ class DataLoader(data.Dataset):
         videos = glob.glob(os.path.join(self.dir, "*"))
         for video in sorted(videos):
             video_name = video.split("/")[-1]
-            self.videos[video_name] = {}
             self.videos[video_name]["path"] = video
-            self.videos[video_name]["frame"] = glob.glob(os.path.join(video, "*.jpg"))
-            self.videos[video_name]["frame"].sort()
+            self.videos[video_name]["frames"] = glob.glob(os.path.join(video, "*.jpg"))
+            self.videos[video_name]["frames"].sort()
             self.videos[video_name]["length"] = len(self.videos[video_name]["frame"])
 
     def get_all_samples(self):
@@ -61,9 +60,8 @@ class DataLoader(data.Dataset):
         videos = glob.glob(os.path.join(self.dir, "*"))
         for video in sorted(videos):
             video_name = video.split("/")[-1]
-            for i in range(len(self.videos[video_name]["frame"]) - self._time_step):
-                frames.append(self.videos[video_name]["frame"][i])
-
+            for i in range(len(self.videos[video_name]["frames"]) - self._time_step):
+                frames.append(self.videos[video_name]["frames"][i])
         return frames
 
     def __getitem__(self, index):
@@ -73,7 +71,7 @@ class DataLoader(data.Dataset):
         batch = []
         for i in range(self._time_step + self._num_pred):
             image = np_load_frame(
-                self.videos[video_name]["frame"][frame_name + i],
+                self.videos[video_name]["frames"][frame_name + i],
                 self._resize_height,
                 self._resize_width,
             )

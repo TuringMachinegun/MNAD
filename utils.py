@@ -1,14 +1,9 @@
-import copy
 import math
 
 import numpy as np
 import torch
 import torch.nn as nn
 from sklearn.metrics import roc_auc_score
-
-
-def rmse(predictions, targets):
-    return np.sqrt(((predictions - targets) ** 2).mean())
 
 
 def psnr(mse):
@@ -18,12 +13,6 @@ def psnr(mse):
 def get_lr(optimizer):
     for param_group in optimizer.param_groups:
         return param_group["lr"]
-
-
-def normalize_img(img):
-    img_re = copy.copy(img)
-    img_re = (img_re - np.min(img_re)) / (np.max(img_re) - np.min(img_re))
-    return img_re
 
 
 def point_score(outputs, imgs):

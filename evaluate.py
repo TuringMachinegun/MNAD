@@ -11,7 +11,7 @@ import torch.utils.data as data
 import torchvision.transforms as transforms
 from torch.autograd import Variable
 
-from model.utils import DataLoader
+from model.data_loader import DataLoader
 from utils import (
     point_score,
     score_sum,
@@ -23,32 +23,22 @@ from utils import (
 
 parser = argparse.ArgumentParser(description="MNAD")
 parser.add_argument("--gpus", nargs="+", type=str, help="gpus")
-parser.add_argument("--batch_size", type=int, default=4, help="batch size for training")
-parser.add_argument("--test_batch_size", type=int, default=1, help="batch size for test")
+parser.add_argument("--batch_size", type=int, default=1, help="batch size")
 parser.add_argument("--h", type=int, default=256, help="height of input images")
 parser.add_argument("--w", type=int, default=256, help="width of input images")
 parser.add_argument("--c", type=int, default=3, help="channel of input images")
 parser.add_argument("--task", type=str, default="prediction", help="The target task for anomaly detection")
 parser.add_argument("--t_length", type=int, default=5, help="length of the frame sequences")
-parser.add_argument("--fdim", type=int, default=512, help="channel dimension of the features")
-parser.add_argument("--mdim", type=int, default=512, help="channel dimension of the memory items")
-parser.add_argument("--msize", type=int, default=10, help="number of the memory items")
+parser.add_argument("--num_workers", type=int, default=1, help="number of workers for the loader")
+
 parser.add_argument("--alpha", type=float, default=0.6, help="weight for the anomality score")
 parser.add_argument("--th", type=float, default=0.01, help="threshold for test updating")
-parser.add_argument("--num_workers", type=int, default=2, help="number of workers for the train loader")
 parser.add_argument(
-    "--num_workers_test",
-    type=int,
-    default=1,
-    help="number of workers for the test loader",
-)
-parser.add_argument(
-    "--dataset_type",
+    "--test_path",
     type=str,
-    default="ped2",
-    help="type of dataset: ped2, avenue, shanghai",
+    help="Path to test dataset. Each folder in the path corresponds to a video, and it contains frames as .jpg, "
+    "in lexicographic order",
 )
-parser.add_argument("--dataset_path", type=str, default="./dataset", help="directory of data")
 parser.add_argument("--model_dir", type=str, help="directory of model")
 parser.add_argument("--m_items_dir", type=str, help="directory of model")
 
@@ -66,11 +56,9 @@ else:
 
 torch.backends.cudnn.enabled = True  # make sure to use cudnn for computational performance
 
-test_folder = args.dataset_path + "/" + args.dataset_type + "/testing/frames"
-
 # Loading dataset
 test_dataset = DataLoader(
-    test_folder,
+    args.test_path,
     transforms.Compose(
         [
             transforms.ToTensor(),
@@ -85,9 +73,9 @@ test_size = len(test_dataset)
 
 test_batch = data.DataLoader(
     test_dataset,
-    batch_size=args.test_batch_size,
+    batch_size=args.batch_size,
     shuffle=False,
-    num_workers=args.num_workers_test,
+    num_workers=args.num_workers,
     drop_last=False,
 )
 
@@ -97,10 +85,13 @@ loss_func_mse = nn.MSELoss(reduction="none")
 model = torch.load(args.model_dir)
 model.cuda()
 m_items = torch.load(args.m_items_dir)
+
+# TODO: Labels are numpy arrays of type int8 containing 0s and 1s. 1 seems to be "anomaly".
+#       The datasets used by the paper seem to be roughly 4/10 anomalies.
 labels = np.load("./data/frame_labels_" + args.dataset_type + ".npy")
 
 videos = OrderedDict()
-videos_list = sorted(glob.glob(os.path.join(test_folder, "*")))
+videos_list = sorted(glob.glob(os.path.join(args.test_path, "*")))
 for video in videos_list:
     video_name = video.split("/")[-1]
     videos[video_name] = {}
@@ -122,12 +113,12 @@ for video in sorted(videos_list):
     if args.task == "prediction":
         labels_list = np.append(
             labels_list,
-            labels[0][4 + label_length : videos[video_name]["length"] + label_length],
+            labels[0][4 + label_length: videos[video_name]["length"] + label_length],
         )
     else:
         labels_list = np.append(
             labels_list,
-            labels[0][label_length : videos[video_name]["length"] + label_length],
+            labels[0][label_length: videos[video_name]["length"] + label_length],
         )
     label_length += videos[video_name]["length"]
     psnr_list[video_name] = []
@@ -166,7 +157,7 @@ for k, (imgs) in enumerate(test_batch):
             _,
             compactness_loss,
         ) = model.forward(imgs[:, 0 : 3 * 4], m_items_test, False)
-        mse_imgs = torch.mean(loss_func_mse((outputs[0] + 1) / 2, (imgs[0, 3 * 4 :] + 1) / 2)).item()
+        mse_imgs = torch.mean(loss_func_mse((outputs[0] + 1) / 2, (imgs[0, 3 * 4:] + 1) / 2)).item()
         mse_feas = compactness_loss.item()
 
         # Calculating the threshold for updating at the test time

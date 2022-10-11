@@ -22,7 +22,7 @@ def Basic(intInput, intOutput, truncated=False):
             padding=1,
         ),
         nn.BatchNorm2d(intOutput),
-        nn.ReLU(inplace=False)
+        nn.ReLU(inplace=False),
     )
     if truncated:
         return nn.Sequential(*layers[:-2])
@@ -121,30 +121,38 @@ class ConvAE(nn.Module):
         self,
         n_channel=3,
         t_length=2,
-        memory_size=10,
-        feature_dim=512,
-        key_dim=512,
-        temp_update=0.1,
-        temp_gather=0.1,
         task="prediction",
     ):
         super().__init__()
         self.task = task
         self.encoder = Encoder(t_length, n_channel, task=task)
+        self.memory = Memory()
         self.decoder = Decoder(n_channel, task=task)
-        self.memory = Memory(memory_size, feature_dim, key_dim, temp_update, temp_gather, task=task)
 
-    def forward(self, x, keys, train=True):
+    def forward(self, x, m_items, train=True):
         if self.task == "prediction":
-            fea, skip1, skip2, skip3 = self.encoder(x)
+            features, skip1, skip2, skip3 = self.encoder(x)
             skips = skip1, skip2, skip3
         else:  # self.task == "reconstruction"
-            fea = self.encoder(x)
+            features = self.encoder(x)
             skips = tuple()  # no skip when task is reconstruction
 
-        # loss functions from Memory block are different
-        # depending on whether we're training/testing predicting/reconstructing
-        # check the Memory.forward function for more details
-        (updated_fea, keys, softmax_score_query, softmax_score_memory, *losses) = self.memory(fea, keys, train)
+        (
+            updated_fea,
+            m_items,
+            softmax_score_query,
+            softmax_score_memory,
+            compactness,
+            separateness,
+        ) = self.memory(features, m_items, train)
         output = self.decoder(updated_fea, *skips)
-        return (output, fea, updated_fea, keys, softmax_score_query, softmax_score_memory, *losses)
+        return (
+            output,
+            features,
+            updated_fea,
+            m_items,
+            softmax_score_query,
+            softmax_score_memory,
+            compactness,
+            separateness,
+        )
