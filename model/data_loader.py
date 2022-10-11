@@ -36,53 +36,44 @@ class DataSet(data.Dataset):
         time_step=4,
         num_pred=1,
     ):
-        self.dir = video_folder
         self.transform = transform
-        self.videos = defaultdict(dict)
         self._resize_height = resize_height
         self._resize_width = resize_width
         self._time_step = time_step
         self._num_pred = num_pred
-        self.setup()
-        self.samples = self.get_all_samples()
 
-    def setup(self):
-        videos = glob.glob(os.path.join(self.dir, "*"))
-        for video in sorted(videos):
-            video_name = video.split("/")[-1]
-            self.videos[video_name]["path"] = video
-            self.videos[video_name]["frames"] = glob.glob(os.path.join(video, "*.jpg"))
-            self.videos[video_name]["frames"].sort()
-            self.videos[video_name]["length"] = len(self.videos[video_name]["frames"])
+        self.videos = self.load_videos(video_folder)
+        self.seqs = self.get_seqs()
 
-    def get_all_samples(self):
-        frames = []
-        videos = glob.glob(os.path.join(self.dir, "*"))
-        for video in sorted(videos):
+    @staticmethod
+    def load_videos(directory):
+        videos_root_folder = glob.glob(os.path.join(directory, "*"))
+        videos = {}
+        for video in sorted(videos_root_folder):
             video_name = video.split("/")[-1]
-            frames.extend(self.videos[video_name]["frames"])
-        return frames
+            frames = sorted(glob.glob(os.path.join(video, "*.jpg")))
+            videos[video_name] = {
+                "path": video,
+                "frames": frames,
+                "length": len(frames)
+            }
+        return videos
+
+    def get_seqs(self):
+        seqs = []
+        seq_len = self._time_step + self._num_pred
+        for video in self.videos.values():
+            seqs.extend(
+                video["frames"][i:i+seq_len] for i in range(video["length"] - seq_len + 1)
+            )
+        return seqs
 
     def __getitem__(self, index):
-        video_name = self.samples[index].split("/")[-2]
-        frame_idx = int(self.samples[index].split("/")[-1].split(".")[-2])
-
-        batch = []
-        for i in range(self._time_step + self._num_pred):
-            try:
-                image = np_load_frame(
-                    # TODO: this assumes that the number of frames is divisible by time step
-                    self.videos[video_name]["frames"][frame_idx + i],
-                    self._resize_height,
-                    self._resize_width,
-                )
-            except Exception as e:
-                print(frame_idx, i, len(self.videos[video_name]["frames"]))
-                raise e
-            if self.transform is not None:
-                batch.append(self.transform(image))
-
-        return np.concatenate(batch, axis=0)
+        seq = self.seqs[index]
+        frames = [np_load_frame(frame, self._resize_height, self._resize_width) for frame in seq]
+        if self.transform is not None:
+            frames = [self.transform(frame) for frame in frames]
+        return np.concatenate(frames, axis=0)
 
     def __len__(self):
-        return len(self.samples) - self._time_step - self._num_pred
+        return len(self.seqs)
