@@ -50,13 +50,7 @@ class Memory(nn.Module):
 
         compactness = loss_mse(query_reshape, pos.detach())
         separateness = loss_margin(query_reshape, pos.detach(), neg.detach())
-        return (
-            separateness,
-            compactness,
-            query_reshape,
-            keys[nearest_indices].squeeze(1).detach(),
-            nearest_indices[:, 0],
-        )
+        return separateness, compactness
 
     def read(self, query, updated_memory):
         batch_size, h, w, dims = query.size()  # b X h X w X d
@@ -87,7 +81,7 @@ class Memory(nn.Module):
         query = F.normalize(query, dim=1)
         query = query.permute(0, 2, 3, 1)  # b X h X w X d
         updated_query, softmax_score_query, softmax_score_memory = self.read(query, keys)
-        separateness, compactness, query_re, top1_keys, keys_ind = self.get_losses(query, keys)
+        separateness, compactness = self.get_losses(query, keys)
         if train:
             updated_memory = self.update(query, keys)
         else:

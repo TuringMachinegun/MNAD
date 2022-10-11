@@ -26,7 +26,7 @@ def np_load_frame(filename, resize_height, resize_width):
     return image_resized
 
 
-class DataLoader(data.Dataset):
+class DataSet(data.Dataset):
     def __init__(
         self,
         video_folder,
@@ -53,32 +53,36 @@ class DataLoader(data.Dataset):
             self.videos[video_name]["path"] = video
             self.videos[video_name]["frames"] = glob.glob(os.path.join(video, "*.jpg"))
             self.videos[video_name]["frames"].sort()
-            self.videos[video_name]["length"] = len(self.videos[video_name]["frame"])
+            self.videos[video_name]["length"] = len(self.videos[video_name]["frames"])
 
     def get_all_samples(self):
         frames = []
         videos = glob.glob(os.path.join(self.dir, "*"))
         for video in sorted(videos):
             video_name = video.split("/")[-1]
-            for i in range(len(self.videos[video_name]["frames"]) - self._time_step):
-                frames.append(self.videos[video_name]["frames"][i])
+            frames.extend(self.videos[video_name]["frames"])
         return frames
 
     def __getitem__(self, index):
         video_name = self.samples[index].split("/")[-2]
-        frame_name = int(self.samples[index].split("/")[-1].split(".")[-2])
+        frame_idx = int(self.samples[index].split("/")[-1].split(".")[-2])
 
         batch = []
         for i in range(self._time_step + self._num_pred):
-            image = np_load_frame(
-                self.videos[video_name]["frames"][frame_name + i],
-                self._resize_height,
-                self._resize_width,
-            )
+            try:
+                image = np_load_frame(
+                    # TODO: this assumes that the number of frames is divisible by time step
+                    self.videos[video_name]["frames"][frame_idx + i],
+                    self._resize_height,
+                    self._resize_width,
+                )
+            except Exception as e:
+                print(frame_idx, i, len(self.videos[video_name]["frames"]))
+                raise e
             if self.transform is not None:
                 batch.append(self.transform(image))
 
         return np.concatenate(batch, axis=0)
 
     def __len__(self):
-        return len(self.samples)
+        return len(self.samples) - self._time_step - self._num_pred

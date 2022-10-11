@@ -11,7 +11,7 @@ import torch.utils.data as data
 import torchvision.transforms as transforms
 from torch.autograd import Variable
 
-from model.data_loader import DataLoader
+from model.data_loader import DataSet
 from utils import (
     point_score,
     score_sum,
@@ -57,7 +57,7 @@ else:
 torch.backends.cudnn.enabled = True  # make sure to use cudnn for computational performance
 
 # Loading dataset
-test_dataset = DataLoader(
+test_dataset = DataSet(
     args.test_path,
     transforms.Compose(
         [
@@ -105,8 +105,6 @@ label_length = 0
 psnr_list = {}
 feature_distance_list = {}
 
-print("Evaluation of", args.dataset_type)
-
 # Setting for video anomaly detection
 for video in sorted(videos_list):
     video_name = video.split("/")[-1]
@@ -152,11 +150,9 @@ for k, (imgs) in enumerate(test_batch):
             m_items_test,
             softmax_score_query,
             softmax_score_memory,
-            _,
-            _,
-            _,
             compactness_loss,
-        ) = model.forward(imgs[:, 0 : 3 * 4], m_items_test, False)
+            _
+        ) = model.forward(imgs[:, 0:3*4], m_items_test, False)
         mse_imgs = torch.mean(loss_func_mse((outputs[0] + 1) / 2, (imgs[0, 3 * 4:] + 1) / 2)).item()
         mse_feas = compactness_loss.item()
 
@@ -182,7 +178,7 @@ for k, (imgs) in enumerate(test_batch):
     if point_sc < args.th:
         query = F.normalize(feas, dim=1)
         query = query.permute(0, 2, 3, 1)  # b X h X w X d
-        m_items_test = model.memory.update(query, m_items_test, False)
+        m_items_test = model.memory.update(query, m_items_test)
 
     psnr_list[videos_list[video_num].split("/")[-1]].append(psnr(mse_imgs))
     feature_distance_list[videos_list[video_num].split("/")[-1]].append(mse_feas)
@@ -202,5 +198,4 @@ anomaly_score_total_list = np.asarray(anomaly_score_total_list)
 
 accuracy = AUC(anomaly_score_total_list, np.expand_dims(1 - labels_list, 0))
 
-print("The result of ", args.dataset_type)
 print("AUC: ", accuracy * 100, "%")

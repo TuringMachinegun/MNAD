@@ -1,5 +1,5 @@
 import torch
-from memory import Memory
+from .memory import Memory
 import torch.nn as nn
 
 
@@ -91,11 +91,11 @@ class Decoder(nn.Module):
         self.task = task
         upsample_out_divider = 1 if task == "reconstruction" else 2
         self.moduleConv = Basic(1024, 512)
-        self.moduleUpsample4 = Upsample(512, 512 / upsample_out_divider)
+        self.moduleUpsample4 = Upsample(512, 512 // upsample_out_divider)
         self.moduleDeconv3 = Basic(512, 256)
-        self.moduleUpsample3 = Upsample(256, 256 / upsample_out_divider)
+        self.moduleUpsample3 = Upsample(256, 256 // upsample_out_divider)
         self.moduleDeconv2 = Basic(256, 128)
-        self.moduleUpsample2 = Upsample(128, 128 / upsample_out_divider)
+        self.moduleUpsample2 = Upsample(128, 128 // upsample_out_divider)
         self.moduleDeconv1 = Gen(128, n_channel, 64)
 
     def forward(self, x, skip1=None, skip2=None, skip3=None):

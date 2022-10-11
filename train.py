@@ -10,7 +10,7 @@ import torch.utils.data as data
 import torchvision.transforms as transforms
 from torch.autograd import Variable
 
-from model.data_loader import DataLoader
+from model.data_loader import DataSet
 from model.model import ConvAE
 
 parser = argparse.ArgumentParser(description="MNAD")
@@ -55,7 +55,7 @@ torch.backends.cudnn.enabled = True  # make sure to use cudnn for computational 
 
 
 # Loading dataset
-train_dataset = DataLoader(
+train_dataset = DataSet(
     args.train_path,
     transforms.Compose(
         [
@@ -105,7 +105,12 @@ for epoch in range(args.epochs):
     start = time.time()
     for j, (imgs) in enumerate(train_batch):
         imgs = Variable(imgs).cuda()
-        imgs_input = imgs if args.task == "reconstruction" else imgs[:, 0:12]
+        if args.task == "prediction":
+            imgs_input = imgs[:, 0:12]  # TODO: looks like first 4 frames?
+            out_truth = imgs[:, 12:]    # TODO: looks like last frame?
+        else:
+            imgs_input = imgs
+            out_truth = imgs
         (
             outputs,
             _,
@@ -118,7 +123,7 @@ for epoch in range(args.epochs):
         ) = model.forward(imgs_input, m_items, True)
 
         optimizer.zero_grad()
-        loss_pixel = torch.mean(loss_func_mse(outputs, imgs_input))
+        loss_pixel = torch.mean(loss_func_mse(outputs, out_truth))
         loss = loss_pixel + args.loss_compact * compactness_loss + args.loss_separate * separateness_loss
         loss.backward(retain_graph=True)
         optimizer.step()
