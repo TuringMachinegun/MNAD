@@ -34,7 +34,7 @@ parser.add_argument(
     "--train_path",
     type=str,
     help="Path to train dataset. Each folder in the path corresponds to a video, and it contains frames as .jpg, "
-    "in lexicographic order."
+    "in lexicographic order.",
 )
 
 args = parser.parse_args()

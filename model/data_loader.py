@@ -65,7 +65,7 @@ class DataSet(data.Dataset):
         seq_idx_originating_video = []
         seq_len = self._time_step + self._num_pred
         for video_name, video in self.videos.items():
-            video_seq = [video["frames"][i:i + seq_len] for i in range(video["length"] - seq_len + 1)]
+            video_seq = [video["frames"][i : i + seq_len] for i in range(video["length"] - seq_len + 1)]
             seqs.extend(video_seq)
             seq_idx_originating_video.extend([video_name] * len(video_seq))
         return seq_idx_originating_video, seqs
@@ -73,7 +73,7 @@ class DataSet(data.Dataset):
     def get_labels(self):
         labels = []
         for video in self.videos.values():
-            labels.append(video["labels"][self._time_step:])
+            labels.append(video["labels"][self._time_step :])
         return np.concatenate(labels)
 
     def __getitem__(self, index):
