@@ -1,7 +1,6 @@
 import argparse
-import glob
 import os
-from collections import OrderedDict
+from collections import defaultdict
 
 import numpy as np
 import torch
@@ -37,12 +36,14 @@ parser.add_argument(
     "--test_path",
     type=str,
     help="Path to test dataset. Each folder in the path corresponds to a video, and it contains frames as .jpg, "
-    "in lexicographic order",
+    "in lexicographic order, and a labels.npy file "
+    "(saved numpy int8 array of same length as number of frames in video, 0=normal, 1=anomaly)",
 )
 parser.add_argument("--model_dir", type=str, help="directory of model")
 parser.add_argument("--m_items_dir", type=str, help="directory of model")
 
 args = parser.parse_args()
+assert args.task == "prediction" or args.task == "reconstruction", "Wrong task name"
 
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 if args.gpus is None:
@@ -85,117 +86,59 @@ loss_func_mse = nn.MSELoss(reduction="none")
 model = torch.load(args.model_dir)
 model.cuda()
 m_items = torch.load(args.m_items_dir)
-
-# TODO: Labels are numpy arrays of type int8 containing 0s and 1s. 1 seems to be "anomaly".
-#       The datasets used by the paper seem to be roughly 4/10 anomalies.
-labels = np.load("./data/frame_labels_" + args.dataset_type + ".npy")
-
-videos = OrderedDict()
-videos_list = sorted(glob.glob(os.path.join(args.test_path, "*")))
-for video in videos_list:
-    video_name = video.split("/")[-1]
-    videos[video_name] = {}
-    videos[video_name]["path"] = video
-    videos[video_name]["frame"] = glob.glob(os.path.join(video, "*.jpg"))
-    videos[video_name]["frame"].sort()
-    videos[video_name]["length"] = len(videos[video_name]["frame"])
-
-labels_list = []
-label_length = 0
-psnr_list = {}
-feature_distance_list = {}
-
-# Setting for video anomaly detection
-for video in sorted(videos_list):
-    video_name = video.split("/")[-1]
-    if args.task == "prediction":
-        labels_list = np.append(
-            labels_list,
-            labels[0][4 + label_length: videos[video_name]["length"] + label_length],
-        )
-    else:
-        labels_list = np.append(
-            labels_list,
-            labels[0][label_length: videos[video_name]["length"] + label_length],
-        )
-    label_length += videos[video_name]["length"]
-    psnr_list[video_name] = []
-    feature_distance_list[video_name] = []
-
-label_length = 0
-video_num = 0
-label_length += videos[videos_list[video_num].split("/")[-1]]["length"]
 m_items_test = m_items.clone()
 
 model.eval()
 
+psnr_lists = defaultdict(list)
+feature_distance_lists = defaultdict(list)
+
 for k, (imgs) in enumerate(test_batch):
-
-    if args.task == "prediction":
-        if k == label_length - 4 * (video_num + 1):
-            video_num += 1
-            label_length += videos[videos_list[video_num].split("/")[-1]]["length"]
-    else:
-        if k == label_length:
-            video_num += 1
-            label_length += videos[videos_list[video_num].split("/")[-1]]["length"]
-
     imgs = Variable(imgs).cuda()
 
     if args.task == "prediction":
-        (
-            outputs,
-            feas,
-            updated_feas,
-            m_items_test,
-            softmax_score_query,
-            softmax_score_memory,
-            compactness_loss,
-            _
-        ) = model.forward(imgs[:, 0:3*4], m_items_test, False)
-        mse_imgs = torch.mean(loss_func_mse((outputs[0] + 1) / 2, (imgs[0, 3 * 4:] + 1) / 2)).item()
-        mse_feas = compactness_loss.item()
-
-        # Calculating the threshold for updating at the test time
-        point_sc = point_score(outputs, imgs[:, 3 * 4 :])
-
+        imgs_input = imgs[:, 0:12]  # TODO: looks like first 4 frames?
+        out_truth = imgs[:, 12:]  # TODO: looks like last frame?
     else:
-        (
-            outputs,
-            feas,
-            updated_feas,
-            m_items_test,
-            softmax_score_query,
-            softmax_score_memory,
-            compactness_loss,
-        ) = model.forward(imgs, m_items_test, False)
-        mse_imgs = torch.mean(loss_func_mse((outputs[0] + 1) / 2, (imgs[0] + 1) / 2)).item()
-        mse_feas = compactness_loss.item()
+        imgs_input = imgs
+        out_truth = imgs
 
-        # Calculating the threshold for updating at the test time
-        point_sc = point_score(outputs, imgs)
+    (
+        outputs,
+        feas,
+        updated_feas,
+        m_items_test,
+        softmax_score_query,
+        softmax_score_memory,
+        compactness_loss,
+        _,
+    ) = model.forward(imgs_input, m_items_test, False)
+    mse_imgs = torch.mean(loss_func_mse((outputs[0] + 1) / 2, (out_truth[0] + 1) / 2)).item()
+    mse_feas = compactness_loss.item()
+
+    # Calculating the threshold for updating at the test time
+    point_sc = point_score(outputs, out_truth)
 
     if point_sc < args.th:
         query = F.normalize(feas, dim=1)
         query = query.permute(0, 2, 3, 1)  # b X h X w X d
         m_items_test = model.memory.update(query, m_items_test)
 
-    psnr_list[videos_list[video_num].split("/")[-1]].append(psnr(mse_imgs))
-    feature_distance_list[videos_list[video_num].split("/")[-1]].append(mse_feas)
+    psnr_lists[test_dataset.seq_idx_originating_video[k]].append(psnr(mse_imgs))
+    feature_distance_lists[test_dataset.seq_idx_originating_video[k]].append(mse_feas)
 
 
 # Measuring the abnormality score and the AUC
 anomaly_score_total_list = []
-for video in sorted(videos_list):
-    video_name = video.split("/")[-1]
+for video_name in test_dataset.videos:
     anomaly_score_total_list += score_sum(
-        anomaly_score_list(psnr_list[video_name]),
-        anomaly_score_list_inv(feature_distance_list[video_name]),
+        anomaly_score_list(psnr_lists[video_name]),
+        anomaly_score_list_inv(feature_distance_lists[video_name]),
         args.alpha,
     )
 
 anomaly_score_total_list = np.asarray(anomaly_score_total_list)
 
-accuracy = AUC(anomaly_score_total_list, np.expand_dims(1 - labels_list, 0))
+accuracy = AUC(anomaly_score_total_list, np.expand_dims(1 - test_dataset.get_labels(), 0))
 
 print("AUC: ", accuracy * 100, "%")

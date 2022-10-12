@@ -1,12 +1,10 @@
-import numpy as np
-from collections import defaultdict
-import os
-import glob
+from pathlib import Path
+
 import cv2
+import numpy as np
 import torch.utils.data as data
 
-
-rng = np.random.RandomState(2020)
+LABELS_FILENAME = "labels.npy"
 
 
 def np_load_frame(filename, resize_height, resize_width):
@@ -42,31 +40,41 @@ class DataSet(data.Dataset):
         self._time_step = time_step
         self._num_pred = num_pred
 
-        self.videos = self.load_videos(video_folder)
-        self.seqs = self.get_seqs()
+        self.videos = self.load_videos(Path(video_folder))
+        self.seq_idx_originating_video, self.seqs = self.get_seqs()
 
     @staticmethod
-    def load_videos(directory):
-        videos_root_folder = glob.glob(os.path.join(directory, "*"))
+    def load_videos(root_dir: Path):
         videos = {}
-        for video in sorted(videos_root_folder):
-            video_name = video.split("/")[-1]
-            frames = sorted(glob.glob(os.path.join(video, "*.jpg")))
+        for video_dir in sorted(root_dir.glob("*")):
+            video_name = video_dir.stem
+            frames = [str(x) for x in sorted(video_dir.glob("*.jpg"))]
+            labels = np.load(str(video_dir / LABELS_FILENAME)) if (video_dir / LABELS_FILENAME).exists() else None
+            if labels is not None:
+                assert labels.size == len(frames)
             videos[video_name] = {
-                "path": video,
+                "path": video_dir,
                 "frames": frames,
-                "length": len(frames)
+                "length": len(frames),
+                "labels": labels,
             }
         return videos
 
     def get_seqs(self):
         seqs = []
+        seq_idx_originating_video = []
         seq_len = self._time_step + self._num_pred
+        for video_name, video in self.videos.items():
+            video_seq = [video["frames"][i:i + seq_len] for i in range(video["length"] - seq_len + 1)]
+            seqs.extend(video_seq)
+            seq_idx_originating_video.extend([video_name] * len(video_seq))
+        return seq_idx_originating_video, seqs
+
+    def get_labels(self):
+        labels = []
         for video in self.videos.values():
-            seqs.extend(
-                video["frames"][i:i+seq_len] for i in range(video["length"] - seq_len + 1)
-            )
-        return seqs
+            labels.append(video["labels"][self._time_step:])
+        return np.concatenate(labels)
 
     def __getitem__(self, index):
         seq = self.seqs[index]

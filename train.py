@@ -34,7 +34,7 @@ parser.add_argument(
     "--train_path",
     type=str,
     help="Path to train dataset. Each folder in the path corresponds to a video, and it contains frames as .jpg, "
-    "in lexicographic order",
+    "in lexicographic order."
 )
 
 args = parser.parse_args()
@@ -107,7 +107,7 @@ for epoch in range(args.epochs):
         imgs = Variable(imgs).cuda()
         if args.task == "prediction":
             imgs_input = imgs[:, 0:12]  # TODO: looks like first 4 frames?
-            out_truth = imgs[:, 12:]    # TODO: looks like last frame?
+            out_truth = imgs[:, 12:]  # TODO: looks like last frame?
         else:
             imgs_input = imgs
             out_truth = imgs
